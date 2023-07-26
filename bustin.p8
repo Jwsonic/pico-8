@@ -21,6 +21,16 @@ walls = {
     }
 }
 
+cell_start = {
+    x = walls.left.x1 + 1,
+    y = walls.top.y1 + 1
+}
+
+cell_end = {
+    x = walls.right.x0 - 1,
+    y = walls.bottom.y0 - 1
+}
+
 cannon = {
     center_x = 64,
     center_y = 112,
@@ -32,21 +42,33 @@ cannon = {
 radius = 5
 diameter = radius * 2
 
+frozen_count = 0
 frozen = {}
+
+colors = { 3, 4, 8, 9, 10, 14 }
 
 active_bubble = {
     x = cannon.center_x - 4,
     y = cannon.center_y - 4,
-    color = 11,
+    color = rnd(colors),
     speed = 2,
-    vx = nil,
-    vy = nil
+    vx = 0,
+    vy = 0
 }
+
+falling_check = nil
+
+falling_bubbles = {}
 
 debug = ""
 
 function _init()
     cls()
+
+    freeze_cell({ col = 0, row = 0 }, 3)
+    freeze_cell({ col = 0, row = 1 }, 3)
+    freeze_cell({ col = 0, row = 2 }, 3)
+    freeze_cell({ col = 1, row = 0 }, 3)
 end
 
 function _update60()
@@ -63,39 +85,56 @@ function _update60()
         cannon.angle = cannon.angle + cannon.speed
     end
 
-    if active_bubble.vx != nil then
-        local collision = collide_frozen()
+    check_falling()
 
-        if collision then
-            freeze_closest_neighbor(collision)
+    local collision = collide_frozen()
+
+    if collision then
+        falling_check = { cell = collision, color = active_bubble.color }
+
+        freeze_closest_neighbor(collision)
+
+        reset_active()
+    else
+        new_x = active_bubble.x + active_bubble.vx
+        new_y = active_bubble.y + active_bubble.vy
+
+        if new_x <= walls.left.x1 or new_x >= cell_end.x - radius then
+            new_x = mid(cell_start.x, new_x, cell_end.x - radius)
+            active_bubble.vx = -active_bubble.vx
+        end
+
+        if new_y <= walls.top.y1 then
+            freeze_cell(bubble_to_cell(active_bubble), active_bubble.color)
 
             reset_active()
         else
-            new_x = active_bubble.x + active_bubble.vx
-            new_y = active_bubble.y + active_bubble.vy
-
-            if new_x <= walls.left.x1 or new_x >= walls.right.x0 - radius then
-                new_x = mid(walls.left.x1 + 1, new_x, walls.right.x0 - radius - 1)
-                active_bubble.vx = -active_bubble.vx
-            end
-
-            if new_y <= walls.top.y1 then
-                local to_freeze = {
-                    x = round((active_bubble.x - walls.left.x1 + 1) / diameter) * diameter + walls.left.x1 + 1,
-                    y = walls.top.y1 + 1,
-                    color = active_bubble.color
-                }
-
-                -- freeze bubble at top
-                add(frozen, to_freeze)
-
-                reset_active()
-            else
-                active_bubble.x = new_x
-                active_bubble.y = new_y
-            end
+            active_bubble.x = new_x
+            active_bubble.y = new_y
         end
     end
+end
+
+function cell_to_ball(cell, color)
+    return {
+        x = cell_start.x
+                + cell.col * diameter + cell.row % 2 * radius,
+        y = cell_start.y
+                + cell.row * (diameter - 1),
+        color = color
+    }
+end
+
+function bubble_to_cell(ball)
+    return {
+        col = round(abs(ball.x - cell_start.x) / diameter),
+        row = round(abs(ball.y - cell_start.y) / (diameter - 1))
+    }
+end
+
+function freeze_cell(cell, color)
+    frozen[cell] = cell_to_ball(cell, color)
+    frozen_count += 1
 end
 
 function log(str)
@@ -119,7 +158,6 @@ function _draw()
     -- so that the palette changes don't affect other draws
 
     for _cell, bubble in pairs(frozen) do
-        -- print("frozen " .. bubble.x .. ", " .. bubble.y, 7)
         draw_bubble(bubble)
     end
 
@@ -154,14 +192,15 @@ end
 function reset_active()
     active_bubble.x = cannon.center_x - 4
     active_bubble.y = cannon.center_y - 4
-    active_bubble.vx = nil
-    active_bubble.vy = nil
+    active_bubble.vx = 0
+    active_bubble.vy = 0
+    active_bubble.color = rnd(colors)
 end
 
 function collide_frozen()
-    for bubble in all(frozen) do
+    for cell, bubble in pairs(frozen) do
         if distance(active_bubble, bubble) <= diameter then
-            return bubble
+            return cell
         end
     end
 end
@@ -171,39 +210,39 @@ function add_frozen(cell, color)
 end
 
 function update_from_cell(bubble, cell)
-    bubble.x = walls.left.x1 + 1
+    bubble.x = cell_start.x
             + cell.col * diameter + cell.row % 2 * radius
-    bubble.y = walls.top.y1 + 1
+    bubble.y = cell_start.y
             + cell.row * (diameter - 1)
 end
 
-neighbor_directions = {
-    { x = -diameter, y = 0 }, --left
-    { x = diameter, y = 0 }, -- right
-    { x = radius, y = 1 - diameter }, --up and right
-    { x = -radius, y = 1 - diameter }, --up and left
-    { x = -radius, y = diameter - 1 }, -- down and left
-    { x = radius, y = diameter - 1 } -- down and right
+neighbor_cells = {
+    { col = -1, row = 0 }, --left
+    { col = 1, row = 0 }, -- right
+    { col = 1, row = -1 }, --up and right
+    { col = -1, row = -1 }, --up and left
+    { col = -1, row = 1 }, -- down and left
+    { col = 1, row = 1 } -- down and right
 }
 
-function freeze_closest_neighbor(bubble)
+function freeze_closest_neighbor(cell)
     local closest = nil
     local closest_dist = 1000
     local dist = nil
+    local active_cell = bubble_to_cell(active_bubble)
 
-    for direction in all(neighbor_directions) do
+    for direction in all(neighbor_cells) do
         local neighbor = {
-            x = bubble.x + direction.x,
-            y = bubble.y + direction.y,
-            color = bubble.color
+            col = cell.col + direction.col,
+            row = cell.row + direction.row
         }
 
         -- Only check neighbors that are on the board and not frozen
-        if neighbor.x >= walls.left.x1
-                and neighbor.x <= walls.right.x0 - diameter
-                and neighbor.y >= walls.top.y1
+        if neighbor.col >= 0
+                and neighbor.col <= 7
+                and neighbor.row >= 0
                 and frozen[neighbor] == nil then
-            dist = distance(active_bubble, neighbor)
+            dist = distance(active_cell, neighbor)
 
             if dist < closest_dist then
                 closest = neighbor
@@ -212,12 +251,54 @@ function freeze_closest_neighbor(bubble)
         end
     end
 
-    add(frozen, closest)
+    freeze_cell(closest, active_bubble.color)
 end
 
-function distance(bubble1, bubble2)
-    return sqrt((bubble1.x - bubble2.x) ^ 2
-            + (bubble1.y - bubble2.y) ^ 2)
+function check_falling()
+    if falling_check then
+        local cells = { falling_check.cell }
+        local i = 1
+
+        while i <= #cells do
+            for direction in all(neighbor_cells) do
+                local neighbor = {
+                    col = cells[i].col + direction.col,
+                    row = cells[i].row + direction.row
+                }
+
+                if neighbor.col >= 0
+                        and neighbor.col <= 7
+                        and neighbor.row >= 0
+                        and frozen[neighbor] ~= nil
+                        and frozen[neighbor].color == falling_check.color then
+                    add(cells, neighbor)
+                end
+            end
+
+            i += 1
+        end
+
+        if #cells >= 3 then
+            for cell in all(cells) do
+                add(falling_bubbles, frozen[cell])
+
+                frozen[cell] = nil
+            end
+        end
+
+        falling_check = nil
+
+        log("falling " .. #falling_bubbles)
+    end
+end
+
+function distance(obj1, obj2)
+    local x1 = obj1.x or obj1.col
+    local y1 = obj1.y or obj1.row
+    local x2 = obj2.x or obj2.col
+    local y2 = obj2.y or obj2.row
+
+    return sqrt((x1 - x2) ^ 2 + (y1 - y2) ^ 2)
 end
 
 function draw_cannon()
