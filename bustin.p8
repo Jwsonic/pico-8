@@ -14,12 +14,12 @@ walls = {
         x1 = 23, y1 = 123
     },
     right = {
-        x0 = 105, y0 = 6,
-        x1 = 107, y1 = 123
+        x0 = 104, y0 = 6,
+        x1 = 106, y1 = 123
     },
     top = {
         x0 = 21, y0 = 3,
-        x1 = 107, y1 = 5
+        x1 = 106, y1 = 5
     },
     bottom = {
         x0 = 24, y0 = 106,
@@ -28,7 +28,7 @@ walls = {
 }
 
 cell_start = {
-    x = walls.left.x1 - radius + 2,
+    x = walls.left.x1 - radius + 1,
     y = walls.top.y1 - diameter + 2
 }
 
