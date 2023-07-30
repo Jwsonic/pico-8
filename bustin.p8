@@ -49,8 +49,6 @@ frozen_count = 0
 
 frozen = {}
 
-neighbors = {}
-
 colors = { 3, 4, 8, 9, 10, 14 }
 
 active_bubble = {
@@ -64,7 +62,7 @@ active_bubble = {
 
 falling_check = nil
 
-falling_bubbles = {}
+falling = {}
 
 function _init()
     printh("", "bustin.txt", true)
@@ -130,7 +128,12 @@ function _update60()
 
         -- freeze at top
         if new_y <= walls.top.y1 then
-            freeze_cell(bubble_to_cell(active_bubble), active_bubble.color)
+            log("freeze at top " .. active_bubble.x .. ", " .. active_bubble.y)
+
+            freeze_cell(
+                flr(abs(active_bubble.x - cell_start.x) / diameter) + 11,
+                active_bubble.color
+            )
 
             reset_active()
         else
@@ -200,12 +203,6 @@ function cell_to_bubble(cell, color)
     }
 end
 
-function bubble_to_cell(ball)
-    return round(abs(ball.x - cell_start.x) / diameter)
-            * round(abs(ball.y - cell_start.y) / (diameter - 1))
-            + 10
-end
-
 function freeze_cell(cell, color)
     log("freeze_cell: " .. cell)
     frozen[cell] = cell_to_bubble(cell, color)
@@ -215,10 +212,6 @@ end
 
 function log(str)
     printh(str .. "\n", "bustin.txt")
-end
-
-function round(num)
-    return flr(num + 0.5)
 end
 
 function draw_background()
@@ -325,6 +318,14 @@ function check_falling()
         log("fall candidates: " .. #fall_candidates)
 
         falling_check = nil
+    end
+
+    if #fall_candidates >= 3 then
+        for cell in all(fall_candidates) do
+            add(falling, frozen[cell])
+            frozen[cell] = nil
+            frozen_count -= 1
+        end
     end
 end
 
