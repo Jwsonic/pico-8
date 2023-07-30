@@ -145,19 +145,36 @@ end
 
 function _draw()
     cls(13)
-    draw_background()
-    draw_cannon()
+    -- draw background
+
+    -- walls
+    for _, wall in pairs(walls) do
+        rectfill(wall.x0, wall.y0, wall.x1, wall.y1, 6)
+    end
+
+    -- floor
+    rectfill(0, 124, 128, 128, 4)
+
+    -- draw cannon
+    line(
+        cannon.center_x, cannon.center_y,
+        cannon.center_x + cos(cannon.angle / 90) * cannon.length,
+        cannon.center_y - sin(cannon.angle / 90) * cannon.length,
+        0
+    )
 
     -- bubble draws should all happen at the same time
     -- so that the palette changes don't affect other draws
 
     for cell, bubble in pairs(frozen) do
         if is_bubble(bubble) then
-            draw_bubble(bubble)
+            pal(1, bubble.color)
+            sspr(0, 0, diameter, diameter, bubble.x, bubble.y)
         end
     end
 
-    draw_bubble(active_bubble)
+    pal(1, active_bubble.color)
+    sspr(0, 0, diameter, diameter, active_bubble.x, active_bubble.y)
 
     --reset palette from bubble draws
     pal(1, 1)
@@ -212,34 +229,6 @@ end
 
 function log(str)
     printh(str .. "\n", "bustin.txt")
-end
-
-function draw_background()
-    for _, wall in pairs(walls) do
-        draw_wall(wall)
-    end
-
-    -- floor
-    rectfill(0, 124, 128, 128, 4)
-end
-
-function draw_wall(wall)
-    rectfill(wall.x0, wall.y0, wall.x1, wall.y1, 6)
-end
-
-function draw_bubble(bubble)
-    pal(1, bubble.color)
-    sspr(0, 0, diameter, diameter, bubble.x, bubble.y)
-end
-
-function draw_cannon()
-    -- draw cannon
-    line(
-        cannon.center_x, cannon.center_y,
-        cannon.center_x + cos(cannon.angle / 90) * cannon.length,
-        cannon.center_y - sin(cannon.angle / 90) * cannon.length,
-        0
-    )
 end
 
 function reset_active()
