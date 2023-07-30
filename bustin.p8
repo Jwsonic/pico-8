@@ -105,6 +105,18 @@ function _update60()
         cannon.angle = cannon.angle + cannon.speed
     end
 
+    -- apply gravity to falling bubbles
+    for _, bubble in pairs(falling) do
+        bubble.vy = min(bubble.vy + 0.1, 4)
+
+        bubble.y += bubble.vy
+
+        if bubble.y > 130 then
+            log("bubble fell off screen")
+            del(falling, bubble)
+        end
+    end
+
     check_falling()
 
     local collision = collide_frozen()
@@ -166,12 +178,22 @@ function _draw()
     -- bubble draws should all happen at the same time
     -- so that the palette changes don't affect other draws
 
+    -- draw falling bubbles
+    for bubble in all(falling) do
+        pal(1, bubble.color)
+        sspr(0, 0, diameter, diameter, bubble.x, bubble.y)
+    end
+
+    -- draw frozen bubbles
+
     for cell, bubble in pairs(frozen) do
         if is_bubble(bubble) then
             pal(1, bubble.color)
             sspr(0, 0, diameter, diameter, bubble.x, bubble.y)
         end
     end
+
+    -- draw active bubble
 
     pal(1, active_bubble.color)
     sspr(0, 0, diameter, diameter, active_bubble.x, active_bubble.y)
@@ -298,10 +320,10 @@ fall_candidates = {}
 fall_seen = {}
 
 function check_falling()
-    if falling_check ~= nil then
-        fall_candidates = {}
-        fall_seen = {}
+    fall_candidates = {}
+    fall_seen = {}
 
+    if falling_check ~= nil then
         do_fall_check(falling_check.cell, falling_check.color)
 
         log("fall candidates: " .. #fall_candidates)
@@ -311,7 +333,16 @@ function check_falling()
 
     if #fall_candidates >= 3 then
         for cell in all(fall_candidates) do
-            add(falling, frozen[cell])
+            log("falling: " .. cell)
+            add(
+                falling, {
+                    x = frozen[cell].x,
+                    y = frozen[cell].y,
+                    color = frozen[cell].color,
+                    timer = 0,
+                    vy = 0
+                }
+            )
             frozen[cell] = nil
             frozen_count -= 1
         end
