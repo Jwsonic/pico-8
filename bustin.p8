@@ -5,6 +5,8 @@ __lua__
 -- a bubble is a table with x, y, and color properties
 -- example bubble: { x = 32, y = 32, color = 3 }
 
+#include bustin/set.lua
+
 radius = 5
 diameter = radius * 2
 
@@ -49,15 +51,15 @@ frozen_count = 0
 
 frozen = {}
 
-colors = { 3, 4, 8, 9, 10, 14 }
+colors = { 12, 10, 11, 8 }
+
+level_one = "11,12,8:13,14,9:15,16,12:17,18,11:"
+        .. "21,22,8:23,24,9:25,26,12:27,11:"
+        .. "31,32,12:33,34,11:35,36,8:37,38,9:"
+        .. "41,12:42,43,11:44,45,8:46,47,9"
 
 active_bubble = {
-    x = cannon.center_x - 4,
-    y = cannon.center_y - 4,
-    color = rnd(colors),
-    speed = 4,
-    vx = 0,
-    vy = 0
+    speed = 4
 }
 
 falling_check = nil
@@ -85,10 +87,16 @@ function _init()
         frozen[i] = off_board and -1 or nil
     end
 
-    freeze_cell(16, 3)
-    freeze_cell(17, 3)
-    freeze_cell(18, 3)
-    freeze_cell(27, 3)
+    for chunk in all(split(level_one, ":")) do
+        chunk = split(chunk, ",")
+        color = deli(chunk)
+
+        for i in all(chunk) do
+            freeze_cell(i, color)
+        end
+    end
+
+    reset_active()
 end
 
 function _update60()
@@ -123,9 +131,11 @@ function _update60()
 
     if collision ~= nil then
         log("collision: " .. collision)
-        falling_check = { cell = collision, color = active_bubble.color }
 
-        freeze_closest_neighbor(collision)
+        falling_check = {
+            cell = freeze_closest_neighbor(collision),
+            color = active_bubble.color
+        }
 
         reset_active()
     else
@@ -243,10 +253,18 @@ function cell_to_bubble(cell, color)
 end
 
 function freeze_cell(cell, color)
-    log("freeze_cell: " .. cell)
+    -- log("freeze_cell: " .. cell)
     frozen[cell] = cell_to_bubble(cell, color)
-    log("freeze_cell: " .. frozen[cell].x .. "," .. frozen[cell].y)
+    -- log("freeze_cell: " .. frozen[cell].x .. "," .. frozen[cell].y)
     frozen_count += 1
+end
+
+function thaw_cell(cell)
+    if is_bubble(frozen[cell]) then
+        -- log("freeze_cell: " .. cell)
+        frozen[cell] = nil
+        frozen_count -= 1
+    end
 end
 
 function log(str)
@@ -254,11 +272,29 @@ function log(str)
 end
 
 function reset_active()
+    -- choose a random color from the frozen colors
+    local colors = Set.new()
+    for _, bubble in pairs(frozen) do
+        if is_bubble(bubble) then
+            log("adding: " .. bubble.color)
+            colors[bubble.color] = true
+        end
+    end
+
+    log("size: " .. colors:get_size())
+
+    colors = colors:get_all_items()
+    log("colors: " .. #colors)
+
+    local color = rnd(colors)
+
+    log("chosen color: " .. color)
+
     active_bubble.x = cannon.center_x - 4
     active_bubble.y = cannon.center_y - 4
     active_bubble.vx = 0
     active_bubble.vy = 0
-    active_bubble.color = rnd(colors)
+    active_bubble.color = color
 end
 
 function collide_frozen()
@@ -314,54 +350,90 @@ function freeze_closest_neighbor(cell)
 
     frozen[closest.cell] = closest.bubble
     frozen_count += 1
+
+    return closest.cell
 end
 
-fall_candidates = {}
 fall_seen = {}
 
 function check_falling()
-    fall_candidates = {}
-    fall_seen = {}
-
     if falling_check ~= nil then
-        do_fall_check(falling_check.cell, falling_check.color)
+        log("check_falling: " .. falling_check.cell .. ", color:" .. falling_check.color)
 
-        log("fall candidates: " .. #fall_candidates)
+        local filter = function(bubble)
+            return bubble.color == falling_check.color
+        end
+        local fall_candidates = walk_frozen(
+            falling_check.cell,
+            Set.new(),
+            filter
+        )
+
+        log("fall candidates: " .. fall_candidates:get_size())
 
         falling_check = nil
-    end
 
-    if #fall_candidates >= 3 then
-        for cell in all(fall_candidates) do
-            log("falling: " .. cell)
-            add(
-                falling, {
-                    x = frozen[cell].x,
-                    y = frozen[cell].y,
-                    color = frozen[cell].color,
-                    timer = 0,
-                    vy = 0
-                }
-            )
-            frozen[cell] = nil
-            frozen_count -= 1
+        if fall_candidates:get_size() >= 3 then
+            for cell in pairs(fall_candidates.items) do
+                log("falling: " .. cell)
+                add(
+                    falling, {
+                        x = frozen[cell].x,
+                        y = frozen[cell].y,
+                        color = frozen[cell].color,
+                        timer = 0,
+                        vy = 0
+                    }
+                )
+                thaw_cell(cell)
+            end
+        end
+
+        local rooted = Set.new()
+
+        for i = 10, 19 do
+            if is_bubble(frozen[i]) then
+                rooted = walk_frozen(i, rooted)
+            end
+        end
+
+        for cell in pairs(frozen) do
+            if is_bubble(frozen[cell]) and not rooted[cell] then
+                log("falling unrooted: " .. cell)
+
+                add(
+                    falling, {
+                        x = frozen[cell].x,
+                        y = frozen[cell].y,
+                        color = frozen[cell].color,
+                        timer = 0,
+                        vy = 0
+                    }
+                )
+
+                thaw_cell(cell)
+            end
         end
     end
 end
 
-function do_fall_check(cell, color)
-    log("checking fall for " .. cell)
-    fall_seen[cell] = true
-    add(fall_candidates, cell)
+function walk_frozen(cell, seen, filter)
+    if not seen[cell] then
+        if type(filter) ~= "function" then
+            filter = function() return true end
+        end
 
-    for neighbor_cell in all(get_neighbor_cells(cell)) do
-        -- Only check frozen neighbors that are the same color and not seen
-        if is_bubble(frozen[neighbor_cell])
-                and not fall_seen[neighbor_cell]
-                and frozen[neighbor_cell].color == color then
-            do_fall_check(neighbor_cell, color)
+        seen[cell] = true
+
+        for neighbor_cell in all(get_neighbor_cells(cell)) do
+            if is_bubble(frozen[neighbor_cell])
+                    and filter(frozen[neighbor_cell]) then
+                seen = walk_frozen(neighbor_cell, seen, filter)
+            end
         end
     end
+
+    return seen
 end
 
 function distance(obj1, obj2)
